@@ -1,3 +1,6 @@
+from __future__ import print_function
+
+from six import print_ as print
 import argparse
 import json
 import os
@@ -56,12 +59,12 @@ def preprocess_conala_dataset(train_file, test_file, grammar_file, src_freq=3, c
     # combine to make vocab
     train_examples += mined_examples
     train_examples += api_examples
-    print(f'{len(train_examples)} training instances', file=sys.stderr)
-    print(f'{len(dev_examples)} dev instances', file=sys.stderr)
+    print('%d training instances'%len(train_examples), file=sys.stderr)
+    print('%d dev instances' % len(dev_examples), file=sys.stderr)
 
     print('process testing data...')
     test_examples = preprocess_dataset(test_file, name='test', transition_system=transition_system)
-    print(f'{len(test_examples)} testing instances', file=sys.stderr)
+    print('%d testing instances' % len(test_examples), file=sys.stderr)
 
     src_vocab = VocabEntry.from_corpus([e.src_sent for e in train_examples], size=vocab_size,
                                        freq_cutoff=src_freq)
@@ -148,7 +151,7 @@ def preprocess_dataset(file_path, transition_system, name='train', firstk=None):
         except (AssertionError, SyntaxError, ValueError, OverflowError) as e:
             skipped_list.append(example_json['question_id'])
             continue
-        example = Example(idx=f'{i}-{example_json["question_id"]}',
+        example = Example(idx='%d-%s' % (i, str(example_json['question_id'])),
                           src_sent=example_dict['intent_tokens'],
                           tgt_actions=tgt_action_infos,
                           tgt_code=canonical_code,
@@ -160,16 +163,16 @@ def preprocess_dataset(file_path, transition_system, name='train', firstk=None):
         examples.append(example)
 
         # log!
-        f.write(f'Example: {example.idx}\n')
+        f.write('Example: %d\n' % example.idx)
         if 'rewritten_intent' in example.meta['example_dict']:
-            f.write(f"Original Utterance: {example.meta['example_dict']['rewritten_intent']}\n")
+            f.write("Original Utterance: %s\n" % example.meta['example_dict']['rewritten_intent'])
         else:
-            f.write(f"Original Utterance: {example.meta['example_dict']['intent']}\n")
-        f.write(f"Original Snippet: {example.meta['example_dict']['snippet']}\n")
-        f.write(f"\n")
-        f.write(f"Utterance: {' '.join(example.src_sent)}\n")
-        f.write(f"Snippet: {example.tgt_code}\n")
-        f.write(f"++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n")
+            f.write("Original Utterance: %s\n" % example.meta['example_dict']['intent'])
+        f.write("Original Snippet: \n" % example.meta['example_dict']['snippet'])
+        f.write("\n")
+        f.write("Utterance: %s\n" % ' '.join(example.src_sent))
+        f.write("Snippet: %s\n" % example.tgt_code)
+        f.write("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n")
 
     f.close()
     print('Skipped due to exceptions: %d' % len(skipped_list), file=sys.stderr)

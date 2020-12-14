@@ -7,6 +7,7 @@ import astor
 import six.moves.cPickle as pickle
 from six.moves import input
 from six.moves import xrange as range
+from six import print_ as print
 from torch.autograd import Variable
 
 import evaluation
