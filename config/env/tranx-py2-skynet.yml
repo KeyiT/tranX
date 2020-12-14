@@ -127,3 +127,30 @@ dependencies:
 - zstd=1.4.5=h9ceee32_0
 - pytorch=1.4.0=py2.7_cuda9.2.148_cudnn7.6.3_0
 - torchvision=0.5.0=py27_cu92
+- pip:
+  - babel
+  - docopt
+  - et-xmlfile
+  - ipython-genutils
+  - jdcal
+  - jupyter-client
+  - jupyter-console
+  - jupyter-core
+  - mkl-fft
+  - mkl-random
+  - odfpy
+  - openpyxl
+  - prompt-toolkit
+  - pytz
+  - pyyaml
+  - records
+  - sqlalchemy
+  - tablib
+  - tabulate
+  - torch
+  - tqdm
+  - unicodecsv
+  - xlrd
+  - xlwt
+  - nltk==3.4.3
+  - astor==0.7.1
