@@ -67,11 +67,19 @@ def train(args):
     evaluator = Registrable.by_name(args.evaluator)(transition_system, args=args)
     if args.cuda: model.cuda()
 
+
     trainable_parameters = [
         p for n, p in model.named_parameters() if 'automodel' not in n and p.requires_grad
     ]
+    bert_parameters = [
+        p for n, p in model.named_parameters() if 'automodel' in n and p.requires_grad
+    ]
+
     optimizer_cls = eval('torch.optim.%s' % args.optimizer)  # FIXME: this is evil!
-    optimizer = optimizer_cls(trainable_parameters, lr=args.lr)
+    if args.finetune_bert:
+        optimizer = optimizer_cls(trainable_parameters, lr=args.lr)
+    else:
+        optimizer = optimizer_cls(trainable_parameters + bert_parameters, lr=args.lr)
 
     if not args.pretrain:
         if args.uniform_init:
@@ -94,6 +102,10 @@ def train(args):
     report_loss = report_examples = report_sup_att_loss = 0.
     history_dev_scores = []
     num_trial = patience = 0
+
+    if args.warmup_step > 0 and args.annealing_step > args.warmup_step:
+        lr_scheduler = get_linear_schedule_with_warmup(optimizer, args.warmup_step, args.annealing_step)
+
     while True:
         epoch += 1
         epoch_begin = time.time()
@@ -125,12 +137,20 @@ def train(args):
 
             # clip gradient
             if args.clip_grad > 0.:
-                grad_norm = torch.nn.utils.clip_grad_norm_(trainable_parameters, args.clip_grad)
+                if args.finetune_bert:
+                    grad_norm = torch.nn.utils.clip_grad_norm_(trainable_parameters + bert_parameters, args.clip_grad)
+                else:
+                    grad_norm = torch.nn.utils.clip_grad_norm_(trainable_parameters, args.clip_grad)
 
             optimizer.step()
 
+            # warmup and annealing
+            if args.warmup_step > 0 and args.annealing_step > args.warmup_step:
+                lr_scheduler.step()
+
             if train_iter % args.log_every == 0:
-                log_str = '[Iter %d] encoder loss=%.5f' % (train_iter, report_loss / report_examples)
+                lr = optimizer.param_groups[0]['lr']
+                log_str = '[Iter %d] encoder loss=%.5f, lr=%.6f' % (train_iter, report_loss / report_examples, lr)
                 if args.sup_attention:
                     log_str += ' supervised attention loss=%.5f' % (report_sup_att_loss / report_examples)
                     report_sup_att_loss = 0.
@@ -193,7 +213,7 @@ def train(args):
         if patience >= args.patience and epoch >= args.lr_decay_after_epoch:
             num_trial += 1
             print('hit #%d trial' % num_trial, file=sys.stderr)
-            if num_trial == args.max_num_trial:
+            if num_trial == args.max_num_trial or (args.warmup_step > 0 and args.annealing_step > args.warmup_step):
                 print('early stop!', file=sys.stderr)
                 exit(0)
 
@@ -209,7 +229,10 @@ def train(args):
             # load optimizers
             if args.reset_optimizer:
                 print('reset optimizer', file=sys.stderr)
-                optimizer = torch.optim.Adam(trainable_parameters, lr=lr)
+                if args.finetune_bert:
+                    optimizer = torch.optim.Adam(trainable_parameters + bert_parameters, lr=lr)
+                else:
+                    optimizer = torch.optim.Adam(trainable_parameters, lr=lr)
             else:
                 print('restore parameters of the optimizers', file=sys.stderr)
                 optimizer.load_state_dict(torch.load(args.save_to + '.optim.bin'))
@@ -565,6 +588,34 @@ def train_reranker_and_test(args):
     print(test_score_with_rerank, file=sys.stderr)
 
 
+def get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, last_epoch=-1):
+    """
+    Create a schedule with a learning rate that decreases linearly from the initial lr set in the optimizer to 0, after
+    a warmup period during which it increases linearly from 0 to the initial lr set in the optimizer.
+
+    Args:
+        optimizer (:class:`~torch.optim.Optimizer`):
+            The optimizer for which to schedule the learning rate.
+        num_warmup_steps (:obj:`int`):
+            The number of steps for the warmup phase.
+        num_training_steps (:obj:`int`):
+            The total number of training steps.
+        last_epoch (:obj:`int`, `optional`, defaults to -1):
+            The index of the last epoch when resuming training.
+
+    Return:
+        :obj:`torch.optim.lr_scheduler.LambdaLR` with the appropriate schedule.
+    """
+
+    def lr_lambda(current_step):
+        if current_step < num_warmup_steps:
+            return float(current_step) / float(max(1, num_warmup_steps))
+        return max(
+            0.0, float(num_training_steps - current_step) / float(max(1, num_training_steps - num_warmup_steps))
+        )
+
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda, last_epoch)
+
 
 if __name__ == '__main__':
     arg_parser = init_arg_parser()
@@ -582,3 +633,5 @@ if __name__ == '__main__':
         interactive_mode(args)
     else:
         raise RuntimeError('unknown mode')
+
+

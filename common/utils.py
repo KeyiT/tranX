@@ -28,6 +28,10 @@ def init_arg_parser():
     arg_parser.add_argument('--seed', default=0, type=int, help='Random seed')
     arg_parser.add_argument('--cuda', action='store_true', default=False, help='Use gpu')
     arg_parser.add_argument('--bert_path', type=str, help='Path of BERT Model Directory')
+    arg_parser.add_argument('--finetune_bert', action='store_true', help='Fine Tune BERT')
+    arg_parser.add_argument('--warmup_step', default=-1, type=int, help='Number of warmup steps')
+    arg_parser.add_argument('--annealing_step', default=-1, type=int, help='Number of annealing steps')
+
     arg_parser.add_argument('--lang', choices=['python', 'lambda_dcs', 'wikisql', 'prolog', 'python3'], default='python',
                             help='[Deprecated] language to parse. Deprecated, use --transition_system and --parser instead')
     arg_parser.add_argument('--asdl_file', type=str, help='Path to ASDL grammar specification')

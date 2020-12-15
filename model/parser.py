@@ -234,9 +234,12 @@ class Parser(nn.Module):
         input_idxs = input_idxs.to(self.device)
         input_mask = input_mask.to(self.device)
 
-        with torch.no_grad():
-            self.automodel.train(mode=False)
+        if self.args.finetune_bert:
             hidden_batch = self.automodel(input_idxs, input_mask)[0]
+        else:
+            with torch.no_grad():
+                self.automodel.train(mode=False)
+                hidden_batch = self.automodel(input_idxs, input_mask)[0]
 
         if torch.any(torch.isnan(hidden_batch)):
             for seq in sequences:
@@ -271,7 +274,6 @@ class Parser(nn.Module):
 
         output = self.bert_norm(output)
         output = self.linear_mapper(output)
-        output = self.dropout(output)
 
         if torch.any(torch.isnan(output)):
             for seq in sequences:
