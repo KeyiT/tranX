@@ -67,16 +67,19 @@ def train(args):
     evaluator = Registrable.by_name(args.evaluator)(transition_system, args=args)
     if args.cuda: model.cuda()
 
+    trainable_parameters = [
+        p for n, p in model.named_parameters() if 'automodel' not in n and p.requires_grad
+    ]
     optimizer_cls = eval('torch.optim.%s' % args.optimizer)  # FIXME: this is evil!
-    optimizer = optimizer_cls(model.parameters(), lr=args.lr)
+    optimizer = optimizer_cls(trainable_parameters, lr=args.lr)
 
     if not args.pretrain:
         if args.uniform_init:
             print('uniformly initialize parameters [-%f, +%f]' % (args.uniform_init, args.uniform_init), file=sys.stderr)
-            nn_utils.uniform_init(-args.uniform_init, args.uniform_init, model.parameters())
+            nn_utils.uniform_init(-args.uniform_init, args.uniform_init, trainable_parameters)
         elif args.glorot_init:
             print('use glorot initialization', file=sys.stderr)
-            nn_utils.glorot_init(model.parameters())
+            nn_utils.glorot_init(trainable_parameters)
 
         # load pre-trained word embedding (optional)
         if args.glove_embed_path:
@@ -122,7 +125,7 @@ def train(args):
 
             # clip gradient
             if args.clip_grad > 0.:
-                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_grad)
+                grad_norm = torch.nn.utils.clip_grad_norm_(trainable_parameters, args.clip_grad)
 
             optimizer.step()
 
@@ -206,7 +209,7 @@ def train(args):
             # load optimizers
             if args.reset_optimizer:
                 print('reset optimizer', file=sys.stderr)
-                optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+                optimizer = torch.optim.Adam(trainable_parameters, lr=lr)
             else:
                 print('restore parameters of the optimizers', file=sys.stderr)
                 optimizer.load_state_dict(torch.load(args.save_to + '.optim.bin'))

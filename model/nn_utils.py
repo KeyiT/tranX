@@ -42,7 +42,7 @@ def length_array_to_mask_tensor(length_array, cuda=False, valid_entry_has_mask_o
         else:
             mask[i][seq_len:] = 1
 
-    mask = torch.ByteTensor(mask)
+    mask = torch.tensor(mask, dtype=torch.bool)
     return mask.cuda() if cuda else mask
 
 

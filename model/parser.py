@@ -26,6 +26,8 @@ from model.attention_util import AttentionUtil
 from model.nn_utils import LabelSmoothing
 from model.pointer_net import PointerNet
 
+from transformers import BertTokenizer, BertModel
+
 
 @Registrable.register('default_parser')
 class Parser(nn.Module):
@@ -155,12 +157,21 @@ class Parser(nn.Module):
         # dropout layer
         self.dropout = nn.Dropout(args.dropout)
 
+        if args.bert_path:
+            self.tokenizer = BertTokenizer.from_pretrained(args.bert_path)
+            self.automodel = BertModel.from_pretrained(args.bert_path)
+
+            self.linear_mapper = nn.Linear(768, args.embed_size)
+            self.bert_norm = nn.LayerNorm(768)
+
         if args.cuda:
             self.new_long_tensor = torch.cuda.LongTensor
             self.new_tensor = torch.cuda.FloatTensor
+            self.device = 'cuda'
         else:
             self.new_long_tensor = torch.LongTensor
             self.new_tensor = torch.FloatTensor
+            self.device = 'cpu'
 
     def encode(self, src_sents_var, src_sents_len):
         """Encode the input natural language utterance
@@ -177,11 +188,14 @@ class Parser(nn.Module):
 
         # (tgt_query_len, batch_size, embed_size)
         # apply word dropout
-        if self.training and self.args.word_dropout:
-            mask = Variable(self.new_tensor(src_sents_var.size()).fill_(1. - self.args.word_dropout).bernoulli().long())
-            src_sents_var = src_sents_var * mask + (1 - mask) * self.vocab.source.unk_id
+        if self.args.bert_path is None:
+            if self.training and self.args.word_dropout:
+                mask = Variable(self.new_tensor(src_sents_var.size()).fill_(1. - self.args.word_dropout).bernoulli().long())
+                src_sents_var = src_sents_var * mask + (1 - mask) * self.vocab.source.unk_id
 
-        src_token_embed = self.src_embed(src_sents_var)
+            src_token_embed = self.src_embed(src_sents_var)
+        else:
+            src_token_embed = src_sents_var
         packed_src_token_embed = pack_padded_sequence(src_token_embed, src_sents_len)
 
         # src_encodings: (tgt_query_len, batch_size, hidden_size)
@@ -195,6 +209,76 @@ class Parser(nn.Module):
         last_cell = torch.cat([last_cell[0], last_cell[1]], 1)
 
         return src_encodings, (last_state, last_cell)
+
+    def _bert_encode(self, sequences):
+        seq_idxs = []
+        seq_lens = []
+        token_lo_hi_lists = list()
+
+        test_len = 0
+        for seq in sequences:
+            test_len = max(test_len, len(seq))
+            tokens, token_lo_hi_list = generate_inputs(self.tokenizer, seq)
+            seq_lens.append(len(tokens))
+            seq_idxs.append(self.tokenizer.convert_tokens_to_ids(tokens))
+            token_lo_hi_lists.append(token_lo_hi_list)
+
+        batch_size = len(seq_lens)
+        maxlen_seq = max(seq_lens)
+        hidden_size = self.automodel.config.hidden_size
+        input_idxs = torch.zeros(batch_size, maxlen_seq).long()
+        input_mask = torch.zeros(batch_size, maxlen_seq).bool()
+        for k, (idxs, len_) in enumerate(zip(seq_idxs, seq_lens)):
+            input_idxs[k, :len_] = torch.LongTensor(idxs)
+            input_mask[k, :len_] = True
+        input_idxs = input_idxs.to(self.device)
+        input_mask = input_mask.to(self.device)
+
+        with torch.no_grad():
+            self.automodel.train(mode=False)
+            hidden_batch = self.automodel(input_idxs, input_mask)[0]
+
+        if torch.any(torch.isnan(hidden_batch)):
+            for seq in sequences:
+                print(seq)
+            raise ValueError
+
+        # merge subtoken embeddings by mean pool
+        output_batch = list()
+        for bi, hidden in enumerate(hidden_batch):
+            token_lo_hi_list = token_lo_hi_lists[bi]
+
+            output_ = list()
+            for lo, hi in token_lo_hi_list:
+
+                hidden_lo_hi = torch.mean(hidden[lo:hi, :], dim=0, keepdim=True)
+                if torch.any(torch.isnan(hidden_lo_hi)):
+                    print(sequences[bi])
+                    print(token_lo_hi_list)
+                    raise ValueError
+
+                output_.append(hidden_lo_hi)
+
+            output_batch.append(torch.cat(output_, dim=0))
+
+        output = torch.nn.utils.rnn.pad_sequence(output_batch, batch_first=False, padding_value=0)
+        if torch.any(torch.isnan(output)):
+            for seq in sequences:
+                print(seq)
+            raise ValueError
+
+        assert output.size(0) == test_len
+
+        output = self.bert_norm(output)
+        output = self.linear_mapper(output)
+        output = self.dropout(output)
+
+        if torch.any(torch.isnan(output)):
+            for seq in sequences:
+                print(seq)
+            raise ValueError
+
+        return output
 
     def init_decoder_state(self, enc_last_state, enc_last_cell):
         """Compute the initial decoder hidden state and cell state"""
@@ -217,7 +301,11 @@ class Parser(nn.Module):
 
         # src_encodings: (batch_size, src_sent_len, hidden_size * 2)
         # (last_state, last_cell, dec_init_vec): (batch_size, hidden_size)
-        src_encodings, (last_state, last_cell) = self.encode(batch.src_sents_var, batch.src_sents_len)
+        if self.args.bert_path:
+            src_sents_var = self._bert_encode(batch.src_sents)
+        else:
+            src_sents_var = batch.src_sents_var
+        src_encodings, (last_state, last_cell) = self.encode(src_sents_var, batch.src_sents_len)
         dec_init_vec = self.init_decoder_state(last_state, last_cell)
 
         # query vectors are sufficient statistics used to compute action probabilities
@@ -486,7 +574,10 @@ class Parser(nn.Module):
         primitive_vocab = self.vocab.primitive
         T = torch.cuda if args.cuda else torch
 
-        src_sent_var = nn_utils.to_input_variable([src_sent], self.vocab.source, cuda=args.cuda, training=False)
+        if self.args.bert_path:
+            src_sent_var = self._bert_encode([src_sent])
+        else:
+            src_sent_var = nn_utils.to_input_variable([src_sent], self.vocab.source, cuda=args.cuda, training=False)
 
         # Variable(1, src_sent_len, hidden_size * 2)
         src_encodings, (last_state, last_cell) = self.encode(src_sent_var, [len(src_sent)])
@@ -818,3 +909,31 @@ class Parser(nn.Module):
         parser.eval()
 
         return parser
+
+
+def generate_inputs(tokenizer, raw_words):
+    tokens = []
+
+    cls_token = tokenizer.cls_token
+    sep_token = tokenizer.sep_token
+
+    tokens.append(cls_token)
+
+    # (start_idx, end_idx) tuple list of sentence word spans
+    token_start_end_indx = []
+
+    for i, raw_word in enumerate(raw_words):
+        i_start = len(tokens)
+
+        if raw_word == '':
+            raw_word = ' '
+
+        sub_tok = tokenizer.tokenize(raw_word)
+
+        tokens += sub_tok
+        i_end = len(tokens)
+        token_start_end_indx.append((i_start, i_end))
+
+    tokens.append(sep_token)
+
+    return tokens, token_start_end_indx
