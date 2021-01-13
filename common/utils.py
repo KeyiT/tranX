@@ -31,6 +31,7 @@ def init_arg_parser():
     arg_parser.add_argument('--finetune_bert', action='store_true', help='Fine Tune BERT')
     arg_parser.add_argument('--warmup_step', default=-1, type=int, help='Number of warmup steps')
     arg_parser.add_argument('--annealing_step', default=-1, type=int, help='Number of annealing steps')
+    arg_parser.add_argument('--bert_lr_factor', default=0.008, type=float, help='learning rate factor for BERT')
 
     arg_parser.add_argument('--lang', choices=['python', 'lambda_dcs', 'wikisql', 'prolog', 'python3'], default='python',
                             help='[Deprecated] language to parse. Deprecated, use --transition_system and --parser instead')

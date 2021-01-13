@@ -67,7 +67,6 @@ def train(args):
     evaluator = Registrable.by_name(args.evaluator)(transition_system, args=args)
     if args.cuda: model.cuda()
 
-
     trainable_parameters = [
         p for n, p in model.named_parameters() if 'automodel' not in n and p.requires_grad
     ]
@@ -77,9 +76,14 @@ def train(args):
 
     optimizer_cls = eval('torch.optim.%s' % args.optimizer)  # FIXME: this is evil!
     if args.finetune_bert:
-        optimizer = optimizer_cls(trainable_parameters, lr=args.lr)
+        param_group = [
+            {'params': trainable_parameters, 'lr': args.lr},
+            {'params': bert_parameters, 'lr': args.lr * args.bert_lr_factor}
+        ]
+
+        optimizer = optimizer_cls(param_group)
     else:
-        optimizer = optimizer_cls(trainable_parameters + bert_parameters, lr=args.lr)
+        optimizer = optimizer_cls(trainable_parameters, lr=args.lr)
 
     if not args.pretrain:
         if args.uniform_init:
@@ -150,7 +154,14 @@ def train(args):
 
             if train_iter % args.log_every == 0:
                 lr = optimizer.param_groups[0]['lr']
-                log_str = '[Iter %d] encoder loss=%.5f, lr=%.6f' % (train_iter, report_loss / report_examples, lr)
+                if len(optimizer.param_groups) == 1:
+                    log_str = '[Iter %d] encoder loss=%.5f, lr=%.6f' % \
+                              (train_iter, report_loss / report_examples, lr)
+                else:
+                    lr_bert = optimizer.param_groups[1]['lr']
+                    log_str = '[Iter %d] encoder loss=%.5f, lr=%.6f, bertlr=%.6f' % \
+                              (train_iter, report_loss / report_examples, lr, lr_bert)
+
                 if args.sup_attention:
                     log_str += ' supervised attention loss=%.5f' % (report_sup_att_loss / report_examples)
                     report_sup_att_loss = 0.
@@ -187,12 +198,10 @@ def train(args):
             is_better = True
 
         if args.decay_lr_every_epoch and epoch > args.lr_decay_after_epoch:
-            lr = optimizer.param_groups[0]['lr'] * args.lr_decay
-            print('decay learning rate to %f' % lr, file=sys.stderr)
-
-            # set new lr
             for param_group in optimizer.param_groups:
+                lr = param_group['lr'] * args.lr_decay
                 param_group['lr'] = lr
+                print('decay learning rate to %f' % lr, file=sys.stderr)
 
         if is_better:
             patience = 0
@@ -218,8 +227,12 @@ def train(args):
                 exit(0)
 
             # decay lr, and restore from previously best checkpoint
-            lr = optimizer.param_groups[0]['lr'] * args.lr_decay
-            print('load previously best model and decay learning rate to %f' % lr, file=sys.stderr)
+            lrs = list()
+            for param_group in optimizer.param_groups:
+                lr = param_group['lr'] * args.lr_decay
+                param_group['lr'] = lr
+                lrs.append(lr)
+                print('load previously best model and decay learning rate to %f' % lr, file=sys.stderr)
 
             # load model
             params = torch.load(args.save_to + '.bin', map_location=lambda storage, loc: storage)
@@ -230,16 +243,20 @@ def train(args):
             if args.reset_optimizer:
                 print('reset optimizer', file=sys.stderr)
                 if args.finetune_bert:
-                    optimizer = torch.optim.Adam(trainable_parameters + bert_parameters, lr=lr)
+                    param_group = [
+                        {'params': trainable_parameters, 'lr': lrs[0]},
+                        {'params': bert_parameters, 'lr': lrs[1]}
+                    ]
+                    optimizer = torch.optim.Adam(param_group)
                 else:
-                    optimizer = torch.optim.Adam(trainable_parameters, lr=lr)
+                    optimizer = torch.optim.Adam(trainable_parameters, lr=lrs[0])
             else:
                 print('restore parameters of the optimizers', file=sys.stderr)
                 optimizer.load_state_dict(torch.load(args.save_to + '.optim.bin'))
 
             # set new lr
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = lr
+            for idx, param_group in enumerate(optimizer.param_groups):
+                param_group['lr'] = lrs[idx]
 
             # reset patience
             patience = 0

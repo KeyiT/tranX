@@ -13,13 +13,12 @@ action_embed_size=128
 field_embed_size=64
 type_embed_size=64
 ptrnet_hidden_dim=32
-lr=0.001
-bertlr=0.08
+lr=0.002
 lr_decay=0.5
 beam_size=15
 lstm='lstm'  # lstm
 bert_path='/shared-data/alan/common/bert'
-model_name=model.sup.django.bertft.bertwodropout.wowm.${lstm}.hidden${hidden_size}.embed${embed_size}.action${action_embed_size}.field${field_embed_size}.type${type_embed_size}.dropout${dropout}.lr${lr}.bertlr${bertlr}.lr_decay${lr_decay}.beam_size${beam_size}.$(basename ${vocab}).$(basename ${train_file}).glorot.par_state_w_field_embe.seed${seed}
+model_name=model.sup.django.bertft.bertwodropout.${lstm}.hidden${hidden_size}.embed${embed_size}.action${action_embed_size}.field${field_embed_size}.type${type_embed_size}.dropout${dropout}.lr${lr}.lr_decay${lr_decay}.beam_size${beam_size}.$(basename ${vocab}).$(basename ${train_file}).glorot.par_state_w_field_embe.seed${seed}
 
 echo "**** Writing results to logs/django/${model_name}.log ****"
 mkdir -p logs/django
@@ -54,7 +53,9 @@ python exp.py \
     --lr_decay ${lr_decay} \
     --beam_size ${beam_size} \
     --log_every 50 \
-    --bert_lr_factor ${bertlr} \
+    --warmup_step 4800 \
+    --annealing_step 96000 \
+    --bert_lr_factor 0.008 \
     --save_to saved_models/django/${model_name} 2>&1 | tee -a logs/django/${model_name}.log
 
 . scripts/django/test.sh saved_models/django/${model_name}.bin 2>&1 | tee -a logs/django/${model_name}.log

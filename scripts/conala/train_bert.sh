@@ -14,13 +14,15 @@ action_embed_size=128
 field_embed_size=64
 type_embed_size=64
 lr=0.001
+bertlr=0.008
 lr_decay=0.5
 batch_size=64
 max_epoch=80
 beam_size=15
 lstm='lstm'  # lstm
 lr_decay_after_epoch=15
-model_name=conala.${lstm}.hidden${hidden_size}.embed${embed_size}.action${action_embed_size}.field${field_embed_size}.type${type_embed_size}.dr${dropout}.lr${lr}.lr_de${lr_decay}.lr_da${lr_decay_after_epoch}.beam${beam_size}.$(basename ${vocab}).$(basename ${train_file}).glorot.par_state.seed${seed}
+bert_path='/shared-data/alan/common/bert'
+model_name=conala.bertft.${lstm}.hidden${hidden_size}.embed${embed_size}.action${action_embed_size}.field${field_embed_size}.type${type_embed_size}.dr${dropout}.lr${lr}.bert_lr_factor${bertlr}.lr_de${lr_decay}.lr_da${lr_decay_after_epoch}.beam${beam_size}.$(basename ${vocab}).$(basename ${train_file}).glorot.par_state.seed${seed}
 
 echo "**** Writing results to logs/conala/${model_name}.log ****"
 mkdir -p logs/conala
@@ -54,7 +56,9 @@ python -u exp.py \
     --lr_decay_after_epoch ${lr_decay_after_epoch} \
     --max_epoch ${max_epoch} \
     --beam_size ${beam_size} \
-    --log_every 50 \
+    --log_every 10 \
+    --bert_lr_factor ${bertlr} \
+    --bert_path ${bert_path}\
     --save_to saved_models/conala/${model_name} 2>&1 | tee logs/conala/${model_name}.log
 
 . scripts/conala/test.sh saved_models/conala/${model_name}.bin 2>&1 | tee -a logs/conala/${model_name}.log

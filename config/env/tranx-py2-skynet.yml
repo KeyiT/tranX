@@ -154,3 +154,4 @@ dependencies:
   - xlwt
   - nltk==3.4.3
   - astor==0.7.1
+  - xgboost
