@@ -15,5 +15,8 @@
 |                              | Conala-Test      |
 |:----------------------------:|-----------------|
 | lr-0.001 + embed128  | 26.92 |
-| bert-base-uncased + finetune + lr-0.001 + bert-lr-0.00008 + embed128 + dropout-0.3 | 37.20, 37.02 |
-| bert-base-uncased + finetune + lr-0.001 + bert-lr-0.000008 + embed128 + dropout-0.3 | 29.09,  27.94|
+| bert-base-uncased + lr-0.001 + embed128 + dropout-0.3 | 29.09,  27.94|
+| bert-base-uncased + finetune + lr-0.001 + bert-lr-0.00008 + embed128 + dropout-0.3 | 28.33 29.17|
+| bert-base-uncased + finetune + lr-0.001 + bert-lr-0.00003 + embed128 + dropout-0.3 | 30.02 29.16|
+| bert-base-uncased + finetune + lr-0.001 + bert-lr-0.000008 + embed128 + dropout-0.3 | 30.19 30.43|
+| bert-base-uncased + finetune + lr-0.001 + bert-lr-0.000008 + embed128 + dropout-0.3 | 28.19 30.20|

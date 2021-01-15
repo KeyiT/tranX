@@ -14,7 +14,7 @@ action_embed_size=128
 field_embed_size=64
 type_embed_size=64
 lr=0.001
-bertlr=0.008
+bertlr=0.003
 lr_decay=0.5
 batch_size=64
 max_epoch=80
@@ -57,6 +57,7 @@ python -u exp.py \
     --max_epoch ${max_epoch} \
     --beam_size ${beam_size} \
     --log_every 10 \
+    --finetune_bert \
     --bert_lr_factor ${bertlr} \
     --bert_path ${bert_path}\
     --save_to saved_models/conala/${model_name} 2>&1 | tee logs/conala/${model_name}.log
